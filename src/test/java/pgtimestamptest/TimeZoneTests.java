@@ -34,8 +34,9 @@ import com.github.freva.asciitable.AsciiTable;
 class TimeZoneTests {
 
 	@Container
-	private PostgreSQLContainer postgresqlContainer = new PostgreSQLContainer().withDatabaseName("pruebas")
-			.withUsername("pruebas").withPassword("pruebas");
+	private PostgreSQLContainer postgresqlContainer = (PostgreSQLContainer) new PostgreSQLContainer(
+			"postgres:15-alpine").withDatabaseName("pruebas").withUsername("pruebas").withPassword("pruebas")
+			.withEnv("TZ", "UTC");
 	private SimpleDriverDataSource ds;
 	private DataSourceTransactionManager tm;
 	private TransactionTemplate transactions;
@@ -53,6 +54,31 @@ class TimeZoneTests {
 	@AfterEach
 	void destroyDataSource() {
 		ds = null;
+	}
+
+	@Test
+	void to_charTimestampBehaviour() {
+		TimeZone.setDefault(TimeZone.getTimeZone("UTC"));
+		String dateString = "'2022-11-17T05:00:00.000'";
+		transactions.execute(t -> {
+			jdbc.update("SET LOCAL TIME ZONE 'America/Toronto'", Map.of());
+			List<String> parts = List.of("current_setting('TIMEZONE')", //
+					dateString + "::timestamp::text", //
+					"(" + dateString + "::timestamp at time zone 'UTC')::text", //
+					"to_char((" + dateString + "::timestamp at time zone 'UTC'), 'YYYY-MM-DD HH24:MI:SS.MS TZ' )" //
+			);
+			var sql = "SELECT " + parts.stream().collect(Collectors.joining(", "));
+			jdbc.query(sql, Map.of(), new RowCallbackHandler() {
+
+				@Override
+				public void processRow(ResultSet rs) throws SQLException {
+					for (int i = 0; i < parts.size(); i++) {
+						System.err.println(parts.get(i) + " -> " + rs.getObject(i + 1));
+					}
+				}
+			});
+			return null;
+		});
 	}
 
 	@Test
